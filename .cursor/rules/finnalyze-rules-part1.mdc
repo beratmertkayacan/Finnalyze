@@ -1,0 +1,379 @@
+---
+description: Fin'nalyze App — Flutter rules §1–§11 (dev phase, Gemini AI core, Firebase, GetX, architecture, folder tree, colors, theme, navigation, naming, errors, loading)
+alwaysApply: true
+---
+
+# Flutter Project Rules — Fin'nalyze
+**Finance + Analyze + Finalize** — Upload your financial documents, Gemini summarizes them, market data contextualizes them, AI gives you actionable recommendations.
+Stack: *GetX* + *Gemini API* + *Firebase* + *Free Market Data APIs*
+
+---
+
+## 1. DEVELOPMENT PHASE
+
+- This project is developed for **Hack3athon'26** (BTK Akademi + Google) — deadline **19 May 2026**.
+- **Gemini API is the mandatory core AI engine** powering all intelligence features.
+- App Store target: this app is designed to be published. All data sources must be legally clean — no scraping, no unlicensed content.
+- The service layer is structured so mock data swaps to real implementations without touching controllers or views.
+- Priority build order: Auth → PDF Upload & Gemini Analysis → Aggregate View → Market Context → Dashboard Insights.
+
+---
+
+## 2. BACKEND — FIREBASE + GEMINI API + MARKET DATA
+
+### Firebase
+- **Firebase Authentication** → user login / registration (email + password).
+- **Firestore** → document metadata, Gemini analysis results, user preferences.
+- **Firebase Storage** → uploaded PDF files stored per user.
+
+### Gemini API
+- Package: `google_generative_ai`
+- Model: `gemini-1.5-flash` for all operations (multimodal, cost-efficient, stays within free tier for hackathon).
+- All AI operations go through Gemini: PDF parsing, financial insight generation, aggregate analysis, market-aware recommendations.
+- **Agentic architecture** is required — 4 discrete agents, each with its own prompt and typed output (see §22).
+
+### Market Data — Free & Legal Sources Only
+The following sources require no paid API key and have no content copyright issues. They provide raw financial data (not editorial content):
+
+| Source | Data | Access |
+|--------|------|--------|
+| TCMB (Central Bank of Turkey) | USD/EUR/GBP rates, interest rates, inflation | Free REST API — no key |
+| Alpha Vantage | Stock prices (BIST + global) | Free tier: 25 calls/day |
+| Exchange Rate API (exchangerate-api.com) | Currency conversion rates | Free tier available |
+
+- **Never** pull editorial articles, blog posts, or social media content from any third-party source.
+- Market data is raw numbers only. Gemini generates all human-readable analysis on top of it.
+- This approach is App Store compliant and requires no licensing.
+
+### Service Interface Pattern
+```dart
+abstract class DocumentAnalysisService {
+  Future<DocumentAnalysisModel> analyzePdf(Uint8List pdfBytes, String fileName);
+  Future<AggregateAnalysisModel> aggregateAnalysis(List<DocumentAnalysisModel> analyses);
+}
+
+class DocumentAnalysisServiceMock   implements DocumentAnalysisService { ... }
+class DocumentAnalysisServiceGemini implements DocumentAnalysisService { ... }
+```
+When the real Gemini implementation is added, only the binding registration changes.
+
+### API Key Management
+- Gemini API key stored in a `.env` file, loaded via `flutter_dotenv`.
+- Never hardcode any API key in source files.
+- `.env` is in `.gitignore`. A `.env.example` with placeholder values is committed to the repo.
+
+---
+
+## 3. STATE MANAGEMENT
+
+- Only **GetX** will be used in this project.
+- No setState, Provider, Riverpod, or Bloc anywhere.
+- Every controller must extend **GetxController**.
+- Reactive variables defined with `.obs`; UI listens via `Obx()` or the `GetX()` widget.
+
+---
+
+## 4. ARCHITECTURE
+
+Each page is split into the following layers:
+
+| Layer | Responsibility |
+|-------|----------------|
+| controllers/ | Business logic, state, Gemini prompt orchestration |
+| service/ | All Firebase / Gemini / market API calls — sole external contact point |
+| views/ | UI only; no logic beyond simple if/else or Obx |
+| widgets/ | Page-specific reusable UI components |
+| models/ | Data models: fields, constructor, fromJson, toJson, copyWith |
+
+**Rules:**
+- Views access controllers only via `Get.find<XController>()`; zero business logic in views.
+- Controllers call services through dependency injection only.
+- All Gemini prompt strings are constants in `core/prompts.dart` — never inline in controllers or services.
+- Model classes hold data only; no UI or business logic.
+
+---
+
+## 5. FOLDER STRUCTURE
+
+```
+lib/
+├── core/
+│   ├── colors.dart               # All color constants
+│   ├── theme.dart                # Light & dark ThemeData
+│   ├── constants.dart            # Padding, radius, size constants
+│   ├── prompts.dart              # All Gemini prompt strings (centralized)
+│   ├── app_assets.dart           # All asset path constants
+│   └── localization/
+│       ├── tr.dart
+│       ├── en.dart
+│       └── app_translations.dart
+│
+├── routes/
+│   ├── routes.dart               # Route name String constants
+│   └── pages.dart                # GetPage list + binding assignments
+│
+├── global_widgets/
+│   ├── custom_button.dart
+│   ├── document_card.dart        # Financial document summary card
+│   ├── transaction_item.dart     # Single transaction row widget
+│   ├── market_badge.dart         # Inline market indicator (rate, trend arrow)
+│   ├── shimmer_box.dart          # Reusable shimmer placeholder
+│   ├── image_error_placeholder.dart
+│   └── loading_widget.dart
+│
+├── services/
+│   ├── storage_service.dart      # GetStorage: theme, language, user prefs
+│   ├── gemini_service.dart       # All Gemini agents (see §22)
+│   └── market_data_service.dart  # TCMB + Alpha Vantage + Exchange Rate API calls
+│
+└── pages/
+    │
+    ├── splash/
+    │   └── views/
+    │       └── splash_view.dart
+    │
+    ├── auth/
+    │   ├── login/
+    │   │   ├── controllers/
+    │   │   │   └── login_controller.dart
+    │   │   ├── views/
+    │   │   │   └── login_view.dart
+    │   │   ├── widgets/
+    │   │   └── bindings/
+    │   │       └── login_binding.dart
+    │   └── register/
+    │       ├── controllers/
+    │       │   └── register_controller.dart
+    │       ├── views/
+    │       │   └── register_view.dart
+    │       ├── widgets/
+    │       └── bindings/
+    │           └── register_binding.dart
+    │
+    ├── home/                         # Dashboard: summary cards + market snapshot
+    │   ├── controllers/
+    │   │   └── home_controller.dart
+    │   ├── service/
+    │   │   └── home_service.dart
+    │   ├── views/
+    │   │   └── home_view.dart
+    │   ├── widgets/
+    │   │   ├── home_summary_card.dart
+    │   │   └── market_snapshot_widget.dart
+    │   ├── bindings/
+    │   │   └── home_binding.dart
+    │   └── models/
+    │       └── dashboard_model.dart
+    │
+    ├── documents/
+    │   │
+    │   ├── upload/                   # PDF picker + upload + Gemini trigger
+    │   │   ├── controllers/
+    │   │   │   └── document_upload_controller.dart
+    │   │   ├── service/
+    │   │   │   └── document_upload_service.dart
+    │   │   ├── views/
+    │   │   │   └── document_upload_view.dart
+    │   │   ├── widgets/
+    │   │   │   └── upload_drop_zone_widget.dart
+    │   │   └── bindings/
+    │   │       └── document_upload_binding.dart
+    │   │
+    │   ├── detail/                   # Single doc: transactions + AI summary + market context
+    │   │   ├── controllers/
+    │   │   │   └── document_detail_controller.dart
+    │   │   ├── service/
+    │   │   │   └── document_detail_service.dart
+    │   │   ├── views/
+    │   │   │   └── document_detail_view.dart
+    │   │   ├── widgets/
+    │   │   │   ├── transaction_list_widget.dart
+    │   │   │   ├── category_chart_widget.dart
+    │   │   │   └── market_context_banner.dart
+    │   │   └── bindings/
+    │   │       └── document_detail_binding.dart
+    │   │
+    │   ├── aggregate/                # Multi-doc cross-bank view + aggregate AI insight
+    │   │   ├── controllers/
+    │   │   │   └── aggregate_controller.dart
+    │   │   ├── service/
+    │   │   │   └── aggregate_service.dart
+    │   │   ├── views/
+    │   │   │   └── aggregate_view.dart
+    │   │   ├── widgets/
+    │   │   │   ├── aggregate_summary_widget.dart
+    │   │   │   └── trend_chart_widget.dart
+    │   │   └── bindings/
+    │   │       └── aggregate_binding.dart
+    │   │
+    │   └── models/
+    │       ├── document_model.dart
+    │       ├── transaction_model.dart
+    │       ├── document_analysis_model.dart
+    │       ├── aggregate_analysis_model.dart
+    │       └── market_insight_model.dart
+    │
+    └── settings/
+        ├── controllers/
+        │   └── settings_controller.dart
+        ├── views/
+        │   └── settings_view.dart
+        ├── widgets/
+        └── bindings/
+            └── settings_binding.dart
+```
+
+---
+
+## 6. COLOR MANAGEMENT
+
+All colors imported only from `core/colors.dart`. No raw `Color(0xFF...)` or `Colors.x` literals anywhere else.
+
+```dart
+// core/colors.dart
+class AppColors {
+  // Brand
+  static const Color primary       = Color(0xFF1B4FD8); // Deep blue — intelligence
+  static const Color secondary     = Color(0xFF6366F1); // Indigo — analysis
+
+  // Backgrounds
+  static const Color background    = Color(0xFFF8FAFC);
+  static const Color surface       = Color(0xFFFFFFFF);
+  static const Color cardBg        = Color(0xFFF1F5F9);
+
+  // Financial semantic colors — use consistently across all data displays
+  static const Color positive      = Color(0xFF10B981); // Income / gain / uptrend
+  static const Color negative      = Color(0xFFEF4444); // Expense / loss / downtrend
+  static const Color neutral       = Color(0xFFF59E0B); // Warning / neutral / flat
+
+  // Text
+  static const Color textPrimary   = Color(0xFF0F172A);
+  static const Color textSecondary = Color(0xFF64748B);
+  static const Color divider       = Color(0xFFE2E8F0);
+}
+```
+
+---
+
+## 7. THEME MANAGEMENT (DARK / LIGHT)
+
+- Theme managed via **GetX** with a global `ThemeController`.
+- User choice persisted with **GetStorage**.
+- Theme changes via `Get.changeTheme(...)`; no app restart.
+
+```dart
+class ThemeController extends GetxController {
+  final _isDark = false.obs;
+  bool get isDark => _isDark.value;
+
+  void toggleTheme() {
+    _isDark.toggle();
+    Get.changeTheme(isDark ? AppTheme.dark : AppTheme.light);
+    // Persist to GetStorage
+  }
+}
+```
+
+---
+
+## 8. NAVIGATION
+
+- **GetX router only.** No `Navigator.push()` anywhere.
+- `routes.dart` holds route name String constants.
+- `pages.dart` holds the GetPage list with bindings.
+
+```dart
+// routes.dart
+class Routes {
+  static const splash          = '/';
+  static const login           = '/login';
+  static const register        = '/register';
+  static const home            = '/home';
+  static const documentUpload  = '/document-upload';
+  static const documentDetail  = '/document-detail';
+  static const aggregate       = '/aggregate';
+  static const settings        = '/settings';
+}
+
+// Usage
+Get.toNamed(Routes.documentDetail, arguments: document);
+```
+
+---
+
+## 9. NAMING CONVENTIONS
+
+### Files — snake_case
+| Type | Example |
+|------|---------|
+| Controller | home_controller.dart, document_upload_controller.dart |
+| Service | document_analysis_service.dart, market_data_service.dart |
+| View | home_view.dart, document_detail_view.dart |
+| Widget | document_card.dart, market_badge.dart |
+| Model | document_model.dart, market_insight_model.dart |
+
+### Classes — PascalCase
+| Type | Example |
+|------|---------|
+| Controller | HomeController, DocumentUploadController |
+| Service | DocumentAnalysisService, MarketDataService |
+| View | HomeView, DocumentDetailView |
+| Model | DocumentModel, MarketInsightModel |
+
+### Variables — camelCase
+- Reactive: `final documentList = <DocumentModel>[].obs;`
+- Non-reactive: `final String bankName;`
+
+### Folders — snake_case: `documents/`, `auth/`, `aggregate/`
+
+---
+
+## 10. ERROR HANDLING
+
+- All error handling in the **controller** layer; views only display error state.
+- Every controller exposes:
+
+```dart
+final isLoading    = false.obs;
+final hasError     = false.obs;
+final errorMessage = ''.obs;
+```
+
+- Service calls wrapped in try / catch / finally:
+
+```dart
+Future<void> analyzeDocument(Uint8List pdfBytes, String fileName) async {
+  isLoading(true);
+  hasError(false);
+  try {
+    analysis.value = await _service.analyzePdf(pdfBytes, fileName);
+  } catch (e) {
+    hasError(true);
+    errorMessage(e.toString());
+  } finally {
+    isLoading(false);
+  }
+}
+```
+
+- User-facing errors shown via `Get.snackbar()` with localized messages. Never expose raw exceptions.
+- Gemini-specific errors have dedicated localization keys: `'error_gemini_quota'.tr`, `'error_gemini_parse'.tr`, `'error_market_data'.tr`.
+
+---
+
+## 11. LOADING STATE STANDARDS
+
+- `isLoading` is **required** for every async operation.
+- First page load → **skeleton / shimmer**. Never a bare spinner as the primary loading pattern.
+- **PDF analysis via Gemini takes 5–20 seconds.** Show a full-screen analysis state with:
+  - Lottie animation from `AppAssets.analysisAnim`
+  - Localized status message: `'analyzing_document'.tr`
+  - Do not let the user navigate away during analysis (lock back button).
+- Button loading → inline spinner on the button only; do not block the full screen.
+- Market data fetch → shimmer on the market snapshot widgets while loading.
+
+```dart
+Obx(() => controller.isLoading.value
+    ? DocumentListSkeleton()
+    : DocumentListView(items: controller.documentList))
+```

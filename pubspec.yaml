@@ -1,0 +1,91 @@
+name: finnalyze
+description: AI-powered financial document analysis with live market context. Upload your bank statements, Gemini analyzes them, market data contextualizes them, AI recommends next steps.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ── State Management & Navigation ──────────────────────────────────────────
+  get: ^4.6.6
+    # GetX: state management, navigation, dependency injection — core architecture
+
+  # ── Firebase ───────────────────────────────────────────────────────────────
+  firebase_core: ^3.0.0
+    # Required base package for all Firebase services
+  firebase_auth: ^5.0.0
+    # User authentication: login and registration
+  cloud_firestore: ^5.0.0
+    # Stores document metadata, Gemini analysis results, user preferences
+  firebase_storage: ^12.0.0
+    # Stores uploaded PDF files per user
+
+  # ── Gemini AI ──────────────────────────────────────────────────────────────
+  google_generative_ai: ^0.4.0
+    # Gemini 1.5 Flash: multimodal PDF parsing, financial insights, recommendations — core AI engine
+
+  # ── Environment Variables ──────────────────────────────────────────────────
+  flutter_dotenv: ^5.1.0
+    # Loads .env so Gemini API key is never hardcoded in source
+
+  # ── Local Storage ──────────────────────────────────────────────────────────
+  get_storage: ^2.1.1
+    # Persists theme, language, market data cache (15-min TTL) on-device
+
+  # ── File & PDF Handling ────────────────────────────────────────────────────
+  file_picker: ^8.0.0
+    # Cross-platform file picker: lets user select PDF from device storage
+  path_provider: ^2.1.0
+    # Access to device file system paths for saving PDF locally
+  pdfx: ^2.6.0
+    # Renders PDF first page as image for document thumbnail preview
+
+  # ── Network ────────────────────────────────────────────────────────────────
+  http: ^1.2.0
+    # HTTP client for TCMB, Alpha Vantage, and Exchange Rate API calls
+  cached_network_image: ^3.3.0
+    # Caches network images with shimmer placeholder and error widget
+
+  # ── UI & Animations ────────────────────────────────────────────────────────
+  shimmer: ^3.0.0
+    # Skeleton/shimmer loading placeholders — required by loading standards (§11)
+  lottie: ^3.1.0
+    # Lottie JSON animations: document analysis state, success, empty states
+  flutter_svg: ^2.0.0
+    # SVG icon rendering for assets/icons/
+
+  # ── Charts ─────────────────────────────────────────────────────────────────
+  fl_chart: ^0.68.0
+    # Pie charts (category breakdown), bar charts (monthly comparison), line charts (trends)
+
+  # ── Utilities ──────────────────────────────────────────────────────────────
+  intl: ^0.19.0
+    # Date formatting and currency number formatting (Turkish locale)
+  uuid: ^4.0.0
+    # UUID generation for local document IDs before Firestore sync
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    # Environment — Gemini API key
+    - .env
+
+    # Images: logo, onboarding, empty states
+    - assets/images/
+
+    # Icons: SVG icons used across the app
+    - assets/icons/
+
+    # Lottie animations: analyzing, success, loading, empty
+    - assets/animations/
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+    # Dart/Flutter lint rules for code quality

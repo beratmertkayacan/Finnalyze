@@ -1,0 +1,453 @@
+---
+description: Fin'nalyze App — Flutter rules §12–§22 (i18n, images, pagination, roles, forms, dispose, class order, bindings, assets, pubspec, general, Gemini agentic layer)
+alwaysApply: true
+---
+
+# Flutter Project Rules — Fin'nalyze (continued)
+**Finance + Analyze + Finalize** | *GetX* + *Gemini API* + *Firebase* + *Free Market Data APIs*
+
+---
+
+## 12. LOCALIZATION / LANGUAGE SUPPORT
+
+- App supports **Turkish (default) and English**.
+- All user-visible strings in `tr.dart` and `en.dart`. No hardcoded copy in views.
+- Use GetX Translations; accessed with `.tr` extension.
+- Language preference stored in GetStorage.
+
+```dart
+// Key naming convention — feature_context_element
+'doc_upload_title'.tr          // "Belge Yükle"
+'doc_upload_subtitle'.tr       // "Banka ekstreni veya kredi kartı özetini yükle"
+'analyzing_document'.tr        // "Belgen analiz ediliyor..."
+'market_context_loading'.tr    // "Piyasa verileri alınıyor..."
+'error_gemini_quota'.tr        // "Günlük AI limiti aşıldı. Yarın tekrar dene."
+'error_gemini_parse'.tr        // "Belge analiz edilemedi. Farklı bir PDF dene."
+'error_market_data'.tr         // "Piyasa verisi alınamadı. İnternet bağlantını kontrol et."
+'aggregate_empty_state'.tr     // "Toplu analiz için en az 2 belge yükle."
+'insight_positive_prefix'.tr   // "İyi haber:"
+'insight_warning_prefix'.tr    // "Dikkat:"
+```
+
+---
+
+## 13. IMAGE HANDLING
+
+- All network images use `cached_network_image`; never use `Image.network()` directly.
+- Every image must define both `placeholder` and `errorWidget`.
+- Placeholders use shimmer matching the real image's aspect ratio.
+
+```dart
+CachedNetworkImage(
+  imageUrl: user.avatarUrl,
+  fit: BoxFit.cover,
+  placeholder: (context, url) => ShimmerBox(width: 40, height: 40),
+  errorWidget: (context, url, error) => const ImageErrorPlaceholder(),
+);
+```
+
+- `ShimmerBox` and `ImageErrorPlaceholder` are global widgets in `lib/global_widgets/`.
+- PDF thumbnail (first page preview) is generated locally on-device after upload using the `pdfx` package; never loaded from network.
+
+---
+
+## 14. PAGINATION / INFINITE SCROLL
+
+- **Pagination is mandatory** on every data-listing screen. Never fetch the full dataset in one shot.
+- Standard pagination state in every list controller:
+
+```dart
+final items         = <T>[].obs;
+final isLoading     = false.obs;
+final isLoadingMore = false.obs;
+final hasError      = false.obs;
+final hasMore       = true.obs;
+int _currentPage    = 1;
+static const int _pageSize = 20;
+```
+
+- `ScrollController` lives in the **controller**, disposed in `onClose()`.
+- Trigger `fetchMore()` when 200 px from bottom:
+
+```dart
+void _onScroll() {
+  final pos = scrollController.position;
+  if (pos.pixels >= pos.maxScrollExtent - 200) fetchMore();
+}
+```
+
+- Keep initial load (`isLoading`) and append load (`isLoadingMore`) as separate states.
+- End of list: localized "all loaded" message when `hasMore == false`; small spinner when `isLoadingMore == true`.
+- `RefreshIndicator` for pull-to-refresh: reset `_currentPage`, clear list, refetch.
+
+---
+
+## 15. USER ROLES
+
+- Two roles: **Free** (standard) and **Premium** (future paid tier — architecture supports it from day one).
+- Role stored in Firestore user document as `role: "free" | "premium"`.
+- Registration is a single flow: display name, email, password.
+- Role accessible app-wide through `AuthController`:
+
+```dart
+final userRole = 'free'.obs;
+bool get isPremium => userRole.value == 'premium';
+```
+
+- Free tier limits (enforced in controller, not service):
+  - Max 3 PDF documents stored.
+  - Aggregate analysis available only with 2+ documents.
+- Premium gates: controller checks `isPremium` before proceeding; unauthorized access triggers an upgrade bottom sheet, not a redirect.
+
+---
+
+## 16. FORM VALIDATION
+
+- All forms follow the GetX pattern: `TextEditingController` + `GlobalKey<FormState>`.
+- `TextEditingController` instances defined in the **controller**, not the view.
+- Validation methods on the controller; view wires them via `validator:`.
+
+```dart
+// In LoginController
+final emailController    = TextEditingController();
+final passwordController = TextEditingController();
+final formKey            = GlobalKey<FormState>();
+
+String? validateEmail(String? value) {
+  if (value == null || value.isEmpty) return 'email_empty'.tr;
+  if (!GetUtils.isEmail(value)) return 'email_invalid'.tr;
+  return null;
+}
+
+String? validatePassword(String? value) {
+  if (value == null || value.isEmpty) return 'password_empty'.tr;
+  if (value.length < 6) return 'password_min_length'.tr;
+  return null;
+}
+
+void submitForm() {
+  if (formKey.currentState!.validate()) { /* proceed */ }
+}
+```
+
+- Use `GetUtils` helpers for validation (`isEmail`, etc.).
+- Field-level errors via Flutter's native `validator`; **not** `Get.snackbar`.
+- Validate on submit; do not disable the button before validation.
+
+---
+
+## 17. DISPOSE / ONCLOSE
+
+- Every `TextEditingController`, `ScrollController`, `AnimationController`, `FocusNode` in a `GetxController` **must** be disposed in `onClose()`.
+
+```dart
+@override
+void onClose() {
+  emailController.dispose();
+  passwordController.dispose();
+  scrollController.dispose();
+  super.onClose(); // always last
+}
+```
+
+- `super.onClose()` always last.
+- Streams / listeners started in `onInit()` must be cancelled in `onClose()`.
+
+---
+
+## 18. INTRA-CLASS CODE ORDERING
+
+Always follow this order inside every class:
+
+### Controller:
+```dart
+class DocumentDetailController extends GetxController {
+  // 1. Services / dependencies
+  final DocumentAnalysisService _analysisService = Get.find();
+  final MarketDataService _marketService = Get.find();
+
+  // 2. Reactive state (.obs)
+  final analysis      = Rxn<DocumentAnalysisModel>();
+  final marketInsight = Rxn<MarketInsightModel>();
+  final isLoading     = false.obs;
+  final hasError      = false.obs;
+  final errorMessage  = ''.obs;
+
+  // 3. Non-reactive variables
+  late final String documentId;
+
+  // 4. Controllers & keys
+  final scrollController = ScrollController();
+
+  // 5. Getters
+  bool get hasData => analysis.value != null;
+
+  // 6. Lifecycle (onInit → onReady → onClose)
+  @override
+  void onInit() {
+    super.onInit();
+    documentId = (Get.arguments as DocumentModel).id;
+    _loadAll();
+  }
+
+  @override
+  void onClose() {
+    scrollController.dispose();
+    super.onClose();
+  }
+
+  // 7. Public methods
+  Future<void> refresh() async => _loadAll();
+
+  // 8. Private methods
+  Future<void> _loadAll() async { ... }
+  void _handleError(Object e) { ... }
+}
+```
+
+### Model:
+Fields → Constructor → `fromJson` factory → `toJson` → `copyWith`
+
+---
+
+## 19. BINDING NAMING
+
+- Files: snake_case. Classes: PascalCase. Pattern: `[page]_binding.dart` → `[Page]Binding`.
+- Binding files live in the page's `bindings/` folder.
+- Register only that page's controllers and services with `lazyPut`:
+
+```dart
+class DocumentDetailBinding extends Bindings {
+  @override
+  void dependencies() {
+    Get.lazyPut<DocumentAnalysisService>(() => DocumentAnalysisServiceGemini());
+    Get.lazyPut<MarketDataService>(() => MarketDataServiceImpl());
+    Get.lazyPut<DocumentDetailController>(() => DocumentDetailController());
+  }
+}
+```
+
+| File | Class |
+|------|-------|
+| home_binding.dart | HomeBinding |
+| document_upload_binding.dart | DocumentUploadBinding |
+| document_detail_binding.dart | DocumentDetailBinding |
+| aggregate_binding.dart | AggregateBinding |
+| login_binding.dart | LoginBinding |
+| register_binding.dart | RegisterBinding |
+| settings_binding.dart | SettingsBinding |
+
+---
+
+## 20. ASSET MANAGEMENT
+
+```
+assets/
+├── images/        # Logo, onboarding, empty states
+├── icons/         # SVG / PNG icons
+├── fonts/         # Custom font files
+└── animations/    # Lottie JSON files
+```
+
+All paths centralized in `core/app_assets.dart`:
+
+```dart
+class AppAssets {
+  // Images
+  static const String logo           = 'assets/images/logo.png';
+  static const String onboardingBg   = 'assets/images/onboarding_bg.png';
+  static const String emptyDocs      = 'assets/images/empty_documents.png';
+  static const String emptyAggregate = 'assets/images/empty_aggregate.png';
+
+  // Animations
+  static const String analysisAnim   = 'assets/animations/analyzing.json';  // Gemini processing
+  static const String successAnim    = 'assets/animations/success.json';
+  static const String loadingAnim    = 'assets/animations/loading.json';
+  static const String emptyAnim      = 'assets/animations/empty.json';
+}
+```
+
+`pubspec.yaml` asset groups:
+```yaml
+flutter:
+  assets:
+    - .env
+    - assets/images/
+    - assets/icons/
+    - assets/animations/
+```
+
+---
+
+## 21. GENERAL RULES
+
+- Globally shared widgets → `lib/global_widgets/`.
+- Page-specific widgets → that page's `widgets/` folder.
+- Prefer `AppConstants` constants over magic numbers.
+- Every `GetPage` has a **Binding**; controllers lazy-injected through bindings.
+- Every `pubspec.yaml` dependency includes an **English** comment explaining why it was added.
+- All in-code comments written in **English**.
+- `AppColors.positive` for income / gains / uptrend. `AppColors.negative` for expense / loss / downtrend. Apply consistently — never use green/red raw colors outside of these semantics.
+- App Store name: **Finnalyze** (no apostrophe — App Store does not accept special characters). Visual identity: **Fin'nalyze** with styled apostrophe.
+
+---
+
+## 22. GEMINI AGENTIC LAYER — HACKATHON CORE
+
+This is the central architecture that earns the Hack3athon'26 Agentic Structures score (10 pts) and powers all AI features.
+
+### The 4 Agents
+
+| Agent | Input | Output | When |
+|-------|-------|--------|------|
+| `DocumentParserAgent` | PDF bytes (`Uint8List`) | `DocumentAnalysisModel` | After PDF upload |
+| `FinancialInsightAgent` | `List<TransactionModel>` + `MarketSnapshotModel` | `InsightModel` | After parsing, enriched with live market data |
+| `AggregateAgent` | `List<DocumentAnalysisModel>` | `AggregateAnalysisModel` | When user opens aggregate view |
+| `RecommendationAgent` | `InsightModel` + `AggregateAnalysisModel` | `List<RecommendationModel>` | After insight generation |
+
+The agent pipeline for a single document:
+```
+PDF Upload
+  → DocumentParserAgent      → DocumentAnalysisModel
+  → MarketDataService        → MarketSnapshotModel  (parallel fetch)
+  → FinancialInsightAgent    → InsightModel
+  → RecommendationAgent      → List<RecommendationModel>
+```
+
+### Prompt Centralization — `core/prompts.dart`
+
+```dart
+class AppPrompts {
+
+  static const String documentParser = '''
+You are a financial document parser specialized in Turkish bank statements and credit card summaries.
+Analyze the attached PDF and extract all financial data.
+
+Return ONLY a valid JSON object with this exact schema:
+{
+  "bankName": "string",
+  "documentType": "bank_statement | credit_card | investment",
+  "accountHolder": "string",
+  "period": "string",
+  "currency": "TRY | USD | EUR",
+  "openingBalance": number,
+  "closingBalance": number,
+  "totalIncome": number,
+  "totalExpense": number,
+  "transactions": [
+    {
+      "date": "YYYY-MM-DD",
+      "description": "string",
+      "amount": number,
+      "type": "income | expense",
+      "category": "food | transport | bills | health | shopping | entertainment | salary | transfer | other"
+    }
+  ]
+}
+No explanations. No markdown. Only the JSON object.
+''';
+
+  static const String financialInsight = '''
+You are a personal finance analyst for Turkish users.
+You will receive a transaction list and current market data (USD/TRY rate, inflation, interest rate).
+
+Analyze the data and return ONLY a valid JSON object:
+{
+  "summary": "string (2-3 sentences in Turkish)",
+  "topCategories": [{"category": "string", "amount": number, "percentage": number}],
+  "anomalies": ["string"],
+  "marketImpact": "string (how current market conditions affected this period's finances)",
+  "score": number (0-100, financial health score)
+}
+No explanations. No markdown. Only the JSON object.
+''';
+
+  static const String aggregateAnalysis = '''
+You are analyzing multiple financial documents from possibly different banks and time periods.
+Identify the complete financial picture across all accounts.
+
+Return ONLY a valid JSON object:
+{
+  "totalIncome": number,
+  "totalExpense": number,
+  "netCashflow": number,
+  "periodCovered": "string",
+  "topExpenseCategories": [{"category": "string", "total": number}],
+  "trend": "improving | stable | declining",
+  "crossAccountSummary": "string (3-4 sentences in Turkish)"
+}
+No explanations. No markdown. Only the JSON object.
+''';
+
+  static const String recommendation = '''
+You are a financial advisor for Turkish users.
+Based on the financial analysis and current market conditions provided, give 3 actionable recommendations.
+
+Return ONLY a valid JSON array:
+[
+  {
+    "title": "string (short, in Turkish)",
+    "description": "string (1-2 sentences, in Turkish)",
+    "priority": "high | medium | low",
+    "type": "saving | spending | investment | alert"
+  }
+]
+No explanations. No markdown. Only the JSON array.
+''';
+
+}
+```
+
+### Response Schema Enforcement
+
+- Every Gemini call sets `responseMimeType: 'application/json'` in `GenerationConfig`.
+- JSON parsed in the **service layer**. Controllers receive typed models only.
+- Malformed JSON → service throws `GeminiParseException` → controller sets `hasError(true)` → view shows localized error.
+- Raw Gemini errors are never shown to the user.
+
+### GeminiService Structure
+
+```dart
+// lib/services/gemini_service.dart
+class GeminiService extends GetxService {
+  late final GenerativeModel _model;
+
+  @override
+  void onInit() {
+    super.onInit();
+    _model = GenerativeModel(
+      model: 'gemini-1.5-flash',
+      apiKey: dotenv.env['GEMINI_API_KEY']!,
+      generationConfig: GenerationConfig(responseMimeType: 'application/json'),
+    );
+  }
+
+  Future<DocumentAnalysisModel> runDocumentParserAgent(Uint8List pdfBytes) async { ... }
+  Future<InsightModel> runFinancialInsightAgent(List<TransactionModel> txs, MarketSnapshotModel market) async { ... }
+  Future<AggregateAnalysisModel> runAggregateAgent(List<DocumentAnalysisModel> docs) async { ... }
+  Future<List<RecommendationModel>> runRecommendationAgent(InsightModel insight) async { ... }
+}
+```
+
+### MarketDataService — Free APIs Only
+
+```dart
+// lib/services/market_data_service.dart
+class MarketDataService extends GetxService {
+  // TCMB — Central Bank of Turkey open API (no key required)
+  Future<double> fetchUsdTryRate() async { ... }
+  Future<double> fetchEurTryRate() async { ... }
+  Future<double> fetchInflationRate() async { ... }
+
+  // Exchange Rate API (free tier)
+  Future<Map<String, double>> fetchExchangeRates(String baseCurrency) async { ... }
+
+  // Alpha Vantage (free tier: 25 calls/day — use sparingly)
+  Future<double> fetchStockPrice(String symbol) async { ... }
+
+  // Aggregated snapshot — called once per document detail load
+  Future<MarketSnapshotModel> fetchMarketSnapshot() async { ... }
+}
+```
+
+All market data is cached in GetStorage with a 15-minute TTL to stay within free API call limits.

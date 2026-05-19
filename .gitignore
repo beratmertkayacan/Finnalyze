@@ -1,3 +1,6 @@
+# Test / sample PDF files — never commit real bank statements
+*.pdf
+
 # Miscellaneous
 *.class
 *.log

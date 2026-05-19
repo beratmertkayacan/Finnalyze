@@ -1,5 +1,5 @@
 name: finnalyze
-description: AI-powered financial document analysis with live market context. Upload your bank statements, Gemini analyzes them, market data contextualizes them, AI recommends next steps.
+description: AI-powered financial document analysis. Upload your bank statements or credit card summaries, Gemini analyzes them, and AI recommends for your financial health.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -15,17 +15,14 @@ dependencies:
     # GetX: state management, navigation, dependency injection — core architecture
 
   # ── Firebase ───────────────────────────────────────────────────────────────
-  firebase_core: ^3.0.0
-    # Required base package for all Firebase services
-  firebase_auth: ^5.0.0
-    # User authentication: login and registration
-  cloud_firestore: ^5.0.0
-    # Stores document metadata, Gemini analysis results, user preferences
-  firebase_storage: ^12.0.0
-    # Stores uploaded PDF files per user
+  # TODO: Firebase'i flutterfire configure ile kurduktan sonra aşağıdaki satırları aç
+  # firebase_core: ^3.0.0
+  # firebase_auth: ^5.0.0
+  # cloud_firestore: ^5.0.0
+  # firebase_storage: ^12.0.0
 
   # ── Gemini AI ──────────────────────────────────────────────────────────────
-  google_generative_ai: ^0.4.0
+  google_generative_ai: ^0.4.6
     # Gemini 1.5 Flash: multimodal PDF parsing, financial insights, recommendations — core AI engine
 
   # ── Environment Variables ──────────────────────────────────────────────────
@@ -34,11 +31,16 @@ dependencies:
 
   # ── Local Storage ──────────────────────────────────────────────────────────
   get_storage: ^2.1.1
-    # Persists theme, language, market data cache (15-min TTL) on-device
+    # Persists documents, theme preference and language setting on-device
+
+  crypto: ^3.0.6
+    # SHA-256 fingerprints to detect duplicate PDF uploads
 
   # ── File & PDF Handling ────────────────────────────────────────────────────
   file_picker: ^8.0.0
     # Cross-platform file picker: lets user select PDF from device storage
+  image_picker: ^1.1.0
+    # Camera and gallery access for scan-to-upload document capture
   path_provider: ^2.1.0
     # Access to device file system paths for saving PDF locally
   pdfx: ^2.6.0
@@ -46,7 +48,7 @@ dependencies:
 
   # ── Network ────────────────────────────────────────────────────────────────
   http: ^1.2.0
-    # HTTP client for TCMB, Alpha Vantage, and Exchange Rate API calls
+    # HTTP client for external API calls
   cached_network_image: ^3.3.0
     # Caches network images with shimmer placeholder and error widget
 

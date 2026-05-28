@@ -58,8 +58,4 @@ Fin'nalyze, banka ve kredi kartı ekstrelerini Google Gemini ile saniyeler için
 | Grafikler | fl_chart |
 | PDF İşleme | pdfx + file_picker |
 
----
 
-<div align="center">
-Hack3athon 2026 için geliştirilmiştir.
-</div>
